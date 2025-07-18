@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import platform
 import re
 import time
 from typing import Dict, Any, Optional, List
@@ -12,7 +13,7 @@ import websockets
 from websockets.client import WebSocketClientProtocol
 from websockets.exceptions import ConnectionClosed
 
-from ws_protocol import to_body, MessageType, ENUM_TO_CAMEL
+from ws_protocol import to_body, MessageType, ENUM_TO_CAMEL, parse_body
 
 # --- 配置 ---
 # 日志配置
@@ -169,6 +170,9 @@ async def handle_track_update(session: aiohttp.ClientSession, ws: WebSocketClien
         # 3. 发送歌词 (TTML优先)
         if player_state.is_new_lyric(track_id):
             await handle_lyrics(session, ws, track_id)
+            
+        #新歌的进度发送
+        await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PLAY_PROGRESS], {"progress": int(track_data["progress"] * 1000)})
 
     # 4. 发送播放进度
     #progress_ms = int(track_data.get('progress', 0) * 1000)  # 将秒转为毫秒
@@ -266,8 +270,151 @@ def parse_lrc(lrc_text: str) -> List[Dict[str, Any]]:
     return lines
 
 
+async def get_player_volume() -> Optional[float]:
+    """通过DBus获取播放器的当前音量。仅限Linux。"""
+    if platform.system() != "Linux":
+        return None
+
+    dbus_command = (
+        "dbus-send --print-reply --dest=org.mpris.MediaPlayer2.yesplaymusic "
+        "/org/mpris/MediaPlayer2 org.freedesktop.DBus.Properties.Get "
+        "string:org.mpris.MediaPlayer2.Player string:Volume"
+    )
+    try:
+        process = await asyncio.create_subprocess_shell(
+            dbus_command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        if process.returncode == 0:
+            output = stdout.decode().strip()
+            # 匹配 "double 0.5" 这样的输出
+            match = re.search(r'double\s+([0-9.]+)', output)
+            if match:
+                volume = float(match.group(1))
+                logging.info(f"成功获取到当前音量: {volume}")
+                return volume
+            else:
+                logging.warning(f"无法从DBus响应中解析音量: {output}")
+        else:
+            logging.error(f"获取音量失败: {stderr.decode().strip()}")
+        return None
+    except Exception as e:
+        logging.error(f"获取音量时发生错误: {e}")
+        return None
+
+
+async def control_player(action: str, value: Any = None):
+    """
+    控制音乐播放器。
+    在Linux上使用DBus，其他系统则记录不支持。
+    """
+    if platform.system() == "Linux":
+        dbus_command = ""
+        if action in ['playpause', 'next', 'previous']:
+            command = ""
+            if action == 'playpause':
+                command = "PlayPause"
+            elif action == 'next':
+                command = "Next"
+            elif action == 'previous':
+                command = "Previous"
+            dbus_command = (
+                f"dbus-send --print-reply "
+                f"--dest=org.mpris.MediaPlayer2.yesplaymusic "
+                f"/org/mpris/MediaPlayer2 "
+                f"org.mpris.MediaPlayer2.Player.{command}"
+            )
+        elif action == 'seek':
+            # MPRIS SetPosition 使用微秒 (microseconds)
+            position_micro = int(value * 1000)
+            dbus_command = (
+                f"dbus-send --print-reply "
+                f"--dest=org.mpris.MediaPlayer2.yesplaymusic "
+                f"/org/mpris/MediaPlayer2 "
+                f"org.mpris.MediaPlayer2.Player.SetPosition "
+                f"objpath:/not/used int64:{position_micro}"
+            )
+        elif action == 'set_volume':
+            # MPRIS Volume 是 0.0 到 1.0 的 double
+            volume = float(value)
+            dbus_command = (
+                f"dbus-send --print-reply "
+                f"--dest=org.mpris.MediaPlayer2.yesplaymusic "
+                f"/org/mpris/MediaPlayer2 "
+                f"org.freedesktop.DBus.Properties.Set "
+                f"string:org.mpris.MediaPlayer2.Player "
+                f"string:Volume variant:double:{volume}"
+            )
+        else:
+            logging.warning(f"未知的播放器控制动作: {action}")
+            return
+        try:
+            logging.info(f"执行DBus命令: {dbus_command}")
+            # 使用 asyncio.create_subprocess_shell 来异步执行命令
+            process = await asyncio.create_subprocess_shell(
+                dbus_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            if process.returncode == 0:
+                logging.info(f"成功执行 '{action}' 操作。")
+            else:
+                logging.error(
+                    f"执行DBus命令失败: {stderr.decode().strip()}")
+        except Exception as e:
+            logging.error(f"执行DBus命令时出错: {e}")
+    else:
+        logging.info(
+            f"接收到 '{action}' 指令，但当前系统 ({platform.system()}) 不支持DBus控制。")
+
+
+async def handle_incoming_messages(ws: WebSocketClientProtocol):
+    """监听并处理来自 amll 的传入消息"""
+    global playing, is_send_go, is_send_stop, is_ui_stop
+    try:
+        async for message in ws:
+            try:
+                parsed_msg = parse_body(message)
+                msg_type_str = parsed_msg.get('type')
+                logging.info(f"收到消息: {msg_type_str}")
+
+                if msg_type_str in [ENUM_TO_CAMEL[MessageType.PAUSE], ENUM_TO_CAMEL[MessageType.RESUME]]:
+                    await control_player('playpause')
+                    if msg_type_str == ENUM_TO_CAMEL[MessageType.RESUME]:
+                        is_send_go = True
+                    else:
+                        #print("暂停")
+                        is_ui_stop=True
+                        is_send_stop = True
+                elif msg_type_str == ENUM_TO_CAMEL[MessageType.FORWARD_SONG]:
+                    await control_player('next')
+                elif msg_type_str == ENUM_TO_CAMEL[MessageType.BACKWARD_SONG]:
+                    await control_player('previous')
+                elif msg_type_str == ENUM_TO_CAMEL[MessageType.SEEK_PLAY_PROGRESS]:
+                    progress_ms = parsed_msg.get('value', {}).get('progress')
+                    if progress_ms is not None:
+                        await control_player('seek', value=progress_ms)
+                elif msg_type_str == ENUM_TO_CAMEL[MessageType.SET_VOLUME]:
+                    volume = parsed_msg.get('value', {}).get('volume')
+                    if volume is not None:
+                        await control_player('set_volume', value=volume)
+
+            except ValueError as e:
+                logging.error(f"解析或处理收到的消息时出错: {e}")
+            except Exception as e:
+                logging.error(f"处理传入消息时发生未知错误: {e}")
+    except ConnectionClosed:
+        logging.info("监听任务因连接关闭而停止。")
+playing = False
+is_send_go = False
+is_send_stop = False
+is_ui_stop = False  # 用于UI控制，是否暂停
 async def main_loop():
     """主循环，连接并同步播放器状态"""
+    global playing, is_send_go, is_send_stop,is_ui_stop
     async with aiohttp.ClientSession() as session:
         while True:
             try:
@@ -275,61 +422,87 @@ async def main_loop():
                 async with websockets.connect(AMLL_WS_URI) as ws:
                     logging.info("成功连接到 amll WebSocket。")
                     player_state.reset()  # 每次重连时重置状态
-                    
-                    
-                    get_time=time.time()
+
+                    # 并发运行消息监听任务和状态发送任务
+                    listener_task = asyncio.create_task(
+                        handle_incoming_messages(ws))
+
+                    # 初始化时发送当前音量
+                    initial_volume = await get_player_volume()
+                    if initial_volume is not None:
+                        await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_VOLUME_CHANGED], {"volume": initial_volume})
+
+                    get_time = time.time()
                     player_data = await fetch_json(session, YESPLAY_PLAYER_API)
-                    last_time = player_data['progress'] * 1000
-                    last_time_clock=time.time()
-                    playing=False
-                    is_send_go=False
-                    is_send_stop=False
+                    await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PLAY_PROGRESS], {"progress": int(player_data["progress"] * 1000)})
+                    last_time = player_data.get('progress', 0) * 1000
+                    last_time_clock = time.time()
+                    
+
                     while True:
-                        if time.time()-get_time>GET_TIME_WAIT:
-                            get_time=time.time()
-                            player_data = await fetch_json(session, YESPLAY_PLAYER_API)
-                        #print(f"获取到播放器数据: {player_data["progress"]} 秒")
-                        
-                        #smooth进度逻辑
+                        # 检查监听任务是否已结束，如果结束则意味着连接可能已断开
+                        if listener_task.done():
+                            try:
+                                # 如果任务异常结束，结果会在这里抛出
+                                listener_task.result()
+                            except Exception as e:
+                                logging.error(f"消息监听任务意外终止: {e}")
+                            logging.info("监听任务结束，退出当前连接循环。")
+                            break  # 退出内层循环以重新连接
+
+                        if time.time() - get_time > GET_TIME_WAIT:
+                            get_time = time.time()
+                            player_data = await fetch_json(
+                                session, YESPLAY_PLAYER_API)
+
                         if player_data and 'progress' in player_data:
                             current_time = player_data['progress'] * 1000
                             if current_time != last_time:
-                                if not playing:
-                                    is_send_go=True
-                                last_time = current_time
-                                last_time_clock=time.time()
+                                if is_ui_stop:
+                                    is_ui_stop = False
+                                    last_time = current_time
+                                    last_time_clock = time.time()
+                                else:
+                                    if not playing:
+                                        is_send_go = True
+                                    last_time = current_time
+                                    last_time_clock = time.time()
                             else:
-                                #print(time.time()-last_time_clock)
-                                if time.time()-last_time_clock>1.2:#1秒的yesplay延迟+0.6秒的平滑延迟
+                                if time.time() - last_time_clock > 1.2:
                                     if playing:
-                                        is_send_stop=True
+                                        is_send_stop = True
+
                         if is_send_go:
-                            is_send_go=False
-                            playing=True
-                            # 发送开始播放消息
-                            # 计算平滑时间
+                            is_send_go = False
+                            playing = True
                             smoothtime = float(
                                 (time.time() - last_time_clock) * 1000 + last_time)
                             await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_RESUMED], {"progress": smoothtime})
-                            logging.info(f"发送: ON_PLAYING, 进度: {last_time} ms")
+                            logging.info(
+                                f"发送: ON_PLAYING, 进度: {last_time} ms")
+
                         if is_send_stop:
-                            is_send_stop=False
-                            playing=False
-                            # 发送暂停消息
+                            is_send_stop = False
+                            playing = False
                             await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PAUSED], {})
                             logging.info("发送: ON_PAUSED (播放已暂停)")
-                        
+
                         if playing:
                             smoothtime = int(
                                 (time.time() - last_time_clock) * 1000 + last_time)
-                            #print(smoothtime,type(smoothtime))
                             await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PLAY_PROGRESS], {"progress": smoothtime})
 
-                        
                         if player_data and player_data.get('currentTrack'):
                             await handle_track_update(session, ws, player_data)
-                        
+                            #print(1)
+                            #await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PLAY_PROGRESS], {"progress": int(player_data["progress"] * 1000)})
+
                         await asyncio.sleep(POLL_INTERVAL)
+
+                    # 确保监听任务在退出循环时被取消
+                    if not listener_task.done():
+                        listener_task.cancel()
+                        await asyncio.gather(listener_task, return_exceptions=True)
 
             except websockets.exceptions.ConnectionClosedError:
                 logging.warning("与 amll 的 WebSocket 连接断开。将在5秒后尝试重连...")
