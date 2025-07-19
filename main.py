@@ -122,6 +122,7 @@ async def main_loop():
                             if tmp_is_force_refresh:
                                 smoothtime = int(last_time)
                             await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PLAY_PROGRESS], {"progress": smoothtime})
+                        # 如果是强制刷新或播放器状态有变化，则发送当前进度，即便未播放
                         if tmp_is_force_refresh:
                             await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PLAY_PROGRESS], {"progress": int(last_time)})
 
