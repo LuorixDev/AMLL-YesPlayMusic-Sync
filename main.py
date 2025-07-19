@@ -373,7 +373,7 @@ async def control_player(action: str, value: Any = None):
 
 async def handle_incoming_messages(ws: WebSocketClientProtocol):
     """监听并处理来自 amll 的传入消息"""
-    global playing, is_send_go, is_send_stop, is_ui_stop
+    global playing, is_send_go, is_send_stop, is_ui_stop,is_force_refresh
     try:
         async for message in ws:
             try:
@@ -383,6 +383,7 @@ async def handle_incoming_messages(ws: WebSocketClientProtocol):
 
                 if msg_type_str in [ENUM_TO_CAMEL[MessageType.PAUSE], ENUM_TO_CAMEL[MessageType.RESUME]]:
                     await control_player('playpause')
+                    is_force_refresh = True
                     if msg_type_str == ENUM_TO_CAMEL[MessageType.RESUME]:
                         is_send_go = True
                     else:
@@ -412,9 +413,10 @@ playing = False
 is_send_go = False
 is_send_stop = False
 is_ui_stop = False  # 用于UI控制，是否暂停
+is_force_refresh = False  # 用于强制刷新状态(例如在歌曲切换时,远程暂停时)
 async def main_loop():
     """主循环，连接并同步播放器状态"""
-    global playing, is_send_go, is_send_stop,is_ui_stop
+    global playing, is_send_go, is_send_stop,is_ui_stop,is_force_refresh
     async with aiohttp.ClientSession() as session:
         while True:
             try:
@@ -443,43 +445,44 @@ async def main_loop():
                         # 检查监听任务是否已结束，如果结束则意味着连接可能已断开
                         if listener_task.done():
                             try:
-                                # 如果任务异常结束，结果会在这里抛出
                                 listener_task.result()
                             except Exception as e:
                                 logging.error(f"消息监听任务意外终止: {e}")
                             logging.info("监听任务结束，退出当前连接循环。")
                             break  # 退出内层循环以重新连接
-
-                        if time.time() - get_time > GET_TIME_WAIT:
+                        tmp_is_force_refresh = is_force_refresh
+                        # 检查是否需要刷新播放器数据
+                        if time.time() - get_time > GET_TIME_WAIT or is_force_refresh:
                             get_time = time.time()
-                            player_data = await fetch_json(
-                                session, YESPLAY_PLAYER_API)
+                            player_data = await fetch_json(session, YESPLAY_PLAYER_API)
+                            
+                            # 如果是强制刷新，直接使用播放器的实际进度
+                            if is_force_refresh:
+                                is_force_refresh = False
+                                if player_data and 'progress' in player_data:
+                                    last_time = player_data['progress'] * 1000
+                                    last_time_clock = time.time()
+                                    await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PLAY_PROGRESS], {"progress": int(last_time)})
 
+                        # 处理播放状态
                         if player_data and 'progress' in player_data:
                             current_time = player_data['progress'] * 1000
                             if current_time != last_time:
-                                if is_ui_stop:
-                                    is_ui_stop = False
-                                    last_time = current_time
-                                    last_time_clock = time.time()
-                                else:
-                                    if not playing:
-                                        is_send_go = True
-                                    last_time = current_time
-                                    last_time_clock = time.time()
+                                last_time = current_time
+                                last_time_clock = time.time()
+                                if not playing and not(is_ui_stop):
+                                    is_send_go = True
+                                is_ui_stop = False
                             else:
-                                if time.time() - last_time_clock > 1.2:
-                                    if playing:
-                                        is_send_stop = True
+                                if time.time() - last_time_clock > 1.2 and playing:
+                                    is_send_stop = True
 
+                        # 处理播放/暂停状态变更
                         if is_send_go:
                             is_send_go = False
                             playing = True
-                            smoothtime = float(
-                                (time.time() - last_time_clock) * 1000 + last_time)
-                            await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_RESUMED], {"progress": smoothtime})
-                            logging.info(
-                                f"发送: ON_PLAYING, 进度: {last_time} ms")
+                            await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_RESUMED], {"progress": last_time})
+                            logging.info(f"发送: ON_PLAYING, 进度: {last_time} ms")
 
                         if is_send_stop:
                             is_send_stop = False
@@ -487,10 +490,14 @@ async def main_loop():
                             await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PAUSED], {})
                             logging.info("发送: ON_PAUSED (播放已暂停)")
 
+                        # 发送进度更新
                         if playing:
                             smoothtime = int(
                                 (time.time() - last_time_clock) * 1000 + last_time)
+                            if tmp_is_force_refresh:
+                                smoothtime = last_time
                             await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PLAY_PROGRESS], {"progress": smoothtime})
+
 
                         if player_data and player_data.get('currentTrack'):
                             await handle_track_update(session, ws, player_data)
