@@ -104,6 +104,12 @@ async def main_loop():
                             await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_RESUMED], {"progress": last_time})
                             logging.info(f"发送: ON_RESUMED, 进度: {last_time} ms")
 
+                            # 播放开始时，尝试更新音量信息
+                            current_volume = await get_player_volume()
+                            if current_volume is not None:
+                                await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_VOLUME_CHANGED], {"volume": current_volume})
+                                logging.info(f"播放状态变更，更新音量为: {current_volume}")
+
                         if s.is_send_stop:
                             s.is_send_stop = False
                             s.playing = False

@@ -6,6 +6,9 @@
 
 from typing import Optional
 
+import asyncio
+from typing import Optional
+
 class PlayerState:
     """
     用于跟踪当前播放器状态，以避免不必要的重复API请求和WS消息。
@@ -16,17 +19,25 @@ class PlayerState:
         self.last_progress_sent: float = -1.0
         self.last_pic_url: Optional[str] = None
         self.last_lyric_id: Optional[int] = None
+        self.current_lyric_task: Optional[asyncio.Task] = None
 
     def reset(self):
         """重置所有状态，通常在重新连接时调用。"""
+        if self.current_lyric_task and not self.current_lyric_task.done():
+            self.current_lyric_task.cancel()
         self.current_track_id = None
         self.last_progress_sent = -1.0
         self.last_pic_url = None
         self.last_lyric_id = None
+        self.current_lyric_task = None
 
     def is_new_track(self, track_id: int) -> bool:
         """检查是否是新歌曲。如果是，则更新状态。"""
         if track_id != self.current_track_id:
+            # 如果存在旧的歌词获取任务，则取消它
+            if self.current_lyric_task and not self.current_lyric_task.done():
+                self.current_lyric_task.cancel()
+                
             self.current_track_id = track_id
             # 新歌曲开始时重置进度和歌词，以确保它们被重新发送
             self.last_progress_sent = -1.0

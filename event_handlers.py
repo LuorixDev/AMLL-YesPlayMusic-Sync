@@ -78,45 +78,64 @@ async def handle_track_update(session: aiohttp.ClientSession, ws: WebSocketClien
 
         # 3. 发送歌词
         if player_state.is_new_lyric(track_id):
-            await handle_lyrics(session, ws, track_id)
+            import asyncio
+            # 创建一个新的歌词获取任务，并保存它以便在需要时可以取消
+            player_state.current_lyric_task = asyncio.create_task(
+                handle_lyrics(session, ws, track_id)
+            )
             
         # 4. 发送新歌的初始进度
         await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PLAY_PROGRESS], {"progress": int(track_data["progress"] * 1000)})
 
 
+import asyncio
+
 async def handle_lyrics(session: aiohttp.ClientSession, ws: WebSocketClientProtocol, track_id: int):
     """
-    获取并发送歌词，优先使用TTML格式，失败则回退到LRC。
+    获取并发送歌词。首先发送LRC歌词，然后在后台尝试获取TTML歌词并替换。
+    这个任务在切歌时可以被取消。
 
     Args:
         session (aiohttp.ClientSession): aiohttp会话对象。
         ws (WebSocketClientProtocol): WebSocket连接实例。
         track_id (int): 歌曲ID。
     """
-    # 尝试获取TTML歌词
-    ttml_url = config.TTML_LYRIC_API_TEMPLATE.format(song_id=track_id)
-    ttml_lyrics = await fetch_text(session, ttml_url)
+    try:
+        # 1. 首先获取并发送LRC歌词
+        lyric_url = f"{config.YESPLAY_LYRIC_API}?id={track_id}"
+        lyric_data = await fetch_json(session, lyric_url)
 
-    if ttml_lyrics:
-        logging.info(f"成功获取歌曲 {track_id} 的TTML歌词。")
-        await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.SET_LYRIC_FROM_TTML], {"data": ttml_lyrics})
-        return
-
-    # 回退到LRC歌词
-    logging.info(f"未找到歌曲 {track_id} 的TTML歌词，回退到LRC格式。")
-    lyric_url = f"{config.YESPLAY_LYRIC_API}?id={track_id}"
-    lyric_data = await fetch_json(session, lyric_url)
-
-    if lyric_data and lyric_data.get('lrc', {}).get('lyric'):
-        lrc_text = lyric_data['lrc']['lyric']
-        parsed_lyrics = parse_lrc(lrc_text)
-        if parsed_lyrics:
-            logging.info(f"成功解析歌曲 {track_id} 的LRC歌词。")
-            await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.SET_LYRIC], {"data": parsed_lyrics})
+        if lyric_data and lyric_data.get('lrc', {}).get('lyric'):
+            lrc_text = lyric_data['lrc']['lyric']
+            parsed_lyrics = parse_lrc(lrc_text)
+            if parsed_lyrics:
+                logging.info(f"成功获取并发送歌曲 {track_id} 的LRC歌词。")
+                await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.SET_LYRIC], {"data": parsed_lyrics})
+            else:
+                logging.warning(f"解析歌曲 {track_id} 的LRC歌词失败。")
         else:
-            logging.warning(f"解析歌曲 {track_id} 的LRC歌词失败。")
-    else:
-        logging.warning(f"获取歌曲 {track_id} 的LRC歌词也失败了。")
+            logging.warning(f"获取歌曲 {track_id} 的LRC歌词失败。")
+
+        # 2. 在后台尝试获取TTML歌词并替换
+        for template in config.TTML_LYRIC_API_TEMPLATES:
+            ttml_url = template.format(song_id=track_id)
+            ttml_lyrics = await fetch_text(session, ttml_url)
+            if ttml_lyrics:
+                logging.info(f"成功从 {ttml_url} 获取歌曲 {track_id} 的TTML歌词，将进行替换。")
+                # 先清空当前歌词
+                await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.SET_LYRIC], {"data": []})
+                # 再发送新的TTML歌词
+                await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.SET_LYRIC_FROM_TTML], {"data": ttml_lyrics})
+                return  # 获取成功后即退出
+            else:
+                logging.info(f"从 {ttml_url} 获取TTML歌词失败，尝试下一个源。")
+        
+        logging.info(f"所有源都未能获取到歌曲 {track_id} 的TTML歌词。")
+
+    except asyncio.CancelledError:
+        logging.info(f"获取歌曲 {track_id} 歌词的任务已被取消（可能因为切歌了）。")
+    except Exception as e:
+        logging.error(f"处理歌曲 {track_id} 歌词时发生未知错误: {e}")
 
 
 async def handle_incoming_messages(ws: WebSocketClientProtocol):
