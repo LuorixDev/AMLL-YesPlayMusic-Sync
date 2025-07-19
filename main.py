@@ -5,11 +5,11 @@
 """
 
 import asyncio
-import logging
 import time
 
 import aiohttp
 import websockets
+from loguru import logger
 
 # --- 模块导入 ---
 # 配置
@@ -18,16 +18,12 @@ import config
 from state import player_state
 import state as s
 # 工具和辅助函数
-from utils import fetch_json
+from utils import fetch_json, setup_logger
 from player_tools import get_player_volume
 # 事件处理器
 from event_handlers import handle_incoming_messages, handle_track_update, send_ws_message
 # WebSocket协议
 from ws_protocol import MessageType, ENUM_TO_CAMEL
-
-# --- 日志配置 ---
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 async def main_loop():
     """
@@ -36,9 +32,9 @@ async def main_loop():
     async with aiohttp.ClientSession() as session:
         while True:
             try:
-                logging.info(f"正在连接到 amll WebSocket: {config.AMLL_WS_URI}")
+                logger.info(f"正在连接到 amll WebSocket: {config.AMLL_WS_URI}")
                 async with websockets.connect(config.AMLL_WS_URI) as ws:
-                    logging.info("成功连接到 amll WebSocket。")
+                    logger.info("成功连接到 amll WebSocket。")
                     player_state.reset()  # 每次重连时重置状态
 
                     # 并发运行消息监听任务
@@ -66,7 +62,7 @@ async def main_loop():
                             try:
                                 listener_task.result()
                             except Exception as e:
-                                logging.error(f"消息监听任务意外终止: {e}")
+                                logger.error(f"消息监听任务意外终止: {e}")
                             break
 
                         tmp_is_force_refresh = s.is_force_refresh
@@ -89,7 +85,7 @@ async def main_loop():
                             if current_time != last_time:
                                 last_time = current_time
                                 last_time_clock = time.time()
-                                if not s.playing and not s.is_ui_stop:
+                                if not s.playing and not s.is_ui_stop and not(s.is_force_refresh):
                                     s.is_send_go = True
                                 s.is_ui_stop = False
                             else:
@@ -102,19 +98,19 @@ async def main_loop():
                             s.is_send_go = False
                             s.playing = True
                             await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_RESUMED], {"progress": last_time})
-                            logging.info(f"发送: ON_RESUMED, 进度: {last_time} ms")
+                            logger.info(f"发送: ON_RESUMED, 进度: {last_time} ms")
 
                             # 播放开始时，尝试更新音量信息
                             current_volume = await get_player_volume()
                             if current_volume is not None:
                                 await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_VOLUME_CHANGED], {"volume": current_volume})
-                                logging.info(f"播放状态变更，更新音量为: {current_volume}")
+                                logger.info(f"播放状态变更，更新音量为: {current_volume}")
 
                         if s.is_send_stop:
                             s.is_send_stop = False
                             s.playing = False
                             await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PAUSED], {})
-                            logging.info("发送: ON_PAUSED")
+                            logger.info("发送: ON_PAUSED")
 
                         # 如果正在播放，平滑地计算并发送进度更新
                         if s.playing:
@@ -138,16 +134,17 @@ async def main_loop():
                         await asyncio.gather(listener_task, return_exceptions=True)
 
             except websockets.exceptions.ConnectionClosedError:
-                logging.warning("与 amll 的 WebSocket 连接断开。将在5秒后尝试重连...")
+                logger.warning("与 amll 的 WebSocket 连接断开。将在5秒后尝试重连...")
             except ConnectionRefusedError:
-                logging.error(f"无法连接到 {config.AMLL_WS_URI}。请确保 amll 服务正在运行。将在5秒后尝试重连...")
+                logger.error(f"无法连接到 {config.AMLL_WS_URI}。请确保 amll 服务正在运行。将在5秒后尝试重连...")
             except Exception as e:
-                logging.error(f"主循环发生未知错误: {e}。将在5秒后尝试重连...")
+                logger.error(f"主循环发生未知错误: {e}。将在5秒后尝试重连...")
 
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
+    setup_logger()
     try:
         asyncio.run(main_loop())
     except KeyboardInterrupt:
-        logging.info("程序已手动停止。")
+        logger.info("程序已手动停止。")
