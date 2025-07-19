@@ -122,6 +122,8 @@ async def main_loop():
                             if tmp_is_force_refresh:
                                 smoothtime = int(last_time)
                             await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PLAY_PROGRESS], {"progress": smoothtime})
+                        if tmp_is_force_refresh:
+                            await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PLAY_PROGRESS], {"progress": int(last_time)})
 
                         # 如果有歌曲数据，则处理歌曲信息更新
                         if player_data and player_data.get('currentTrack'):
