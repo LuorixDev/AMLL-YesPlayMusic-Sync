@@ -29,7 +29,7 @@
 你可以通过 `pip` 安装所需的依赖库：
 
 ```bash
-pip install websockets aiohttp
+pip install websockets aiohttp loguru requests
 ```
 
 ### 3. 配置
