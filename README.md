@@ -3,7 +3,9 @@
 这是一个将 [YesPlayMusic](https://github.com/qier222/YesPlayMusic) 播放器状态与 [amll (applemusic-like-lyrics)](https://github.com/Steve-xmh/applemusic-like-lyrics) 服务进行同步的Python工具。
 
 > **旨在为Linux和安卓（容器）的用户提供本地的网易云在线歌曲播放支持。同时Win也可用。**
-> NOTICE：**安卓容器**的用户可能需要使用本仓库release中的YesPlayMusic Fix版本，负责可能遇到运行Yesplaymusic提示非法指令错误。
+
+
+> NOTICE：**安卓容器**的用户可能需要使用本仓库release中的YesPlayMusic Fix版本，否则可能遇到运行Yesplaymusic提示非法指令错误。
 
 它会实时获取 YesPlayMusic 的播放状态，包括当前曲目、播放进度、音量和播放/暂停状态，并通过 WebSocket 将这些信息发送给 `amll` 服务。这使得 `amll` 能够以精美的 Apple Music 风格展示实时歌词。
 
