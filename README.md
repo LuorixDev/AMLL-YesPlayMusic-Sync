@@ -6,12 +6,19 @@
 
 
 > NOTICE：**安卓容器**的用户可能需要使用本仓库release中的YesPlayMusic Fix版本，否则可能遇到运行Yesplaymusic提示非法指令错误。
+> 
 > 经测试，fix版本仍然可能报错，可尝试本地编译。（请自备git,nodejs16,yarn环境，不会的话问GPT)
+> 
 > 1.git clone https://github.com/qier222/YesPlayMusic
+> 
 > 2.yarn add electron@27.0.0
+> 
 > 3.yarn electron-builder --linux dir
+> 
 > 4.在dist_electron 中找到yesplaymusic
+> 
 > 5.运行 yesplaymusic --no-sandbox
+> 
 > 6.正常运行
 
 它会实时获取 YesPlayMusic 的播放状态，包括当前曲目、播放进度、音量和播放/暂停状态，并通过 WebSocket 将这些信息发送给 `amll` 服务。这使得 `amll` 能够以精美的 Apple Music 风格展示实时歌词。
