@@ -11,7 +11,7 @@
 > 
 > 1.git clone https://github.com/qier222/YesPlayMusic
 > 
-> 2.yarn add electron@27.0.0
+> 2.yarn add electron@27.3.2
 > 
 > 3.yarn electron:build --linux dir
 > 
