@@ -13,7 +13,7 @@
 > 
 > 2.yarn add electron@27.0.0
 > 
-> 3.yarn electron-builder --linux dir
+> 3.yarn electron:build --linux dir
 > 
 > 4.在dist_electron 中找到yesplaymusic
 > 
