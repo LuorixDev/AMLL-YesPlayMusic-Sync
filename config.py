@@ -10,7 +10,7 @@ YESPLAY_LYRIC_API = "http://127.0.0.1:10754/lyric"
 TTML_LYRIC_API_TEMPLATES = [
     "https://amll.mirror.dimeta.top/api/db/ncm-lyrics/{song_id}.ttml",
 ]
-AMLL_WS_URI = "ws://192.168.1.171:11444"
+AMLL_WS_URI = "ws://192.168.1.172:11444"
 
 # 轮询和时间间隔 (秒)
 POLL_INTERVAL = 0.01          # 主循环的轮询间隔

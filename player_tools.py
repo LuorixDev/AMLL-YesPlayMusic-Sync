@@ -95,6 +95,53 @@ async def get_player_volume() -> Optional[float]:
         logging.error(f"获取音量时发生错误: {e}")
         return None
 
+async def get_player_status() -> Optional[str]:
+    """
+    通过 D-Bus 获取播放器的当前播放状态。
+    此功能仅限于Linux系统。
+
+    Returns:
+        Optional[str]: 返回播放状态（例如 "Playing", "Paused"），如果获取失败则返回None。
+    """
+    if platform.system() != "Linux":
+        logging.debug("非Linux系统，跳过获取播放状态。")
+        return None
+
+    dbus_command = (
+        "dbus-send --print-reply --dest=org.mpris.MediaPlayer2.yesplaymusic "
+        "/org/mpris/MediaPlayer2 org.freedesktop.DBus.Properties.Get "
+        "string:'org.mpris.MediaPlayer2.Player' string:'PlaybackStatus'"
+    )
+
+    try:
+        process = await asyncio.create_subprocess_shell(
+            dbus_command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode == 0 and stdout:
+            output = stdout.decode().strip()
+            match = re.search(r'string "(Playing|Paused|Stopped)"', output)
+            if match:
+                status = match.group(1)
+                logging.debug(f"成功获取到播放状态: {status}")
+                return status
+            else:
+                logging.warning(f"无法从DBus输出中解析播放状态: {output}")
+                return None
+        else:
+            error_message = stderr.decode().strip()
+            if "was not provided by any .service files" in error_message:
+                 logging.debug(f"获取播放状态失败，可能是播放器未运行: {error_message}")
+            else:
+                logging.error(f"获取播放状态失败: {error_message}")
+            return None
+    except Exception as e:
+        logging.error(f"获取播放状态时发生错误: {e}")
+        return None
+
 async def control_player(action: str, value: Any = None):
     """
     通过D-Bus或pactl控制音乐播放器。
