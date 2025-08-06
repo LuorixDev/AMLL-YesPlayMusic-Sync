@@ -55,6 +55,17 @@ async def main_loop():
                         last_time = 0
                     last_time_clock = time.time()
                     
+                    # 获取初始播放器状态
+                    player_status = await get_player_status()
+                    if player_status == "Playing":
+                        s.playing = True
+                        await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_RESUMED], {"progress": last_time})
+                        logger.info(f"状态变更 -> 播放, 进度: {last_time} ms")
+                    elif player_status == "Paused":
+                        s.playing = False
+                        await send_ws_message(ws, ENUM_TO_CAMEL[MessageType.ON_PAUSED], {})
+                        logger.info("状态变更 -> 暂停")
+                    
                     # --- 主循环 ---
                     while True:
                         # 检查监听任务是否已结束（连接断开）
