@@ -6,13 +6,13 @@
 
 > NOTICE：**安卓容器**的用户可能需要使用本仓库release中的YesPlayMusic Fix版本，否则可能遇到运行Yesplaymusic提示非法指令错误。
 > 
-> 经测试，部分环境fix版本仍然可能报错，可尝试本地编译。（请自备git,nodejs16,yarn环境，不会的话问GPT)
+> 经测试，部分环境fix版本仍然可能报错，可尝试本地编译。（请自备git,nodejs16,yarn环境，不会的话问GPT)[可以先试试仓库fix版本可不可用，暂时无法反馈]
 > 
 > 1.git clone https://github.com/qier222/YesPlayMusic
 > 
 > 2.yarn add electron@27.3.2
 >
-> 3. cp .env.example .env
+> 3.cp .env.example .env
 > 
 > 4.yarn electron:build --linux dir
 > 
