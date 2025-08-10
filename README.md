@@ -39,7 +39,7 @@
 在运行此脚本之前，请确保你已准备好：
 
 - **Python 3.7+**
-- 一个正在运行的 **YesPlayMusic** 实例，并确保其API可以访问。
+- 一个正在运行的 **YesPlayMusic** 实例，并确保其API可以访问（**YesPlayMusic**默认开启，与python在同一容器就无需更改）。
 - 一个正在运行的 **amll** 服务实例。
 
 ### 2. 安装依赖
@@ -55,9 +55,9 @@ pip install websockets aiohttp loguru requests
 打开 `config.py` 文件，根据你的实际环境修改以下配置：
 
 - `YESPLAY_PLAYER_API`: 你的 YesPlayMusic 播放器 API 地址。
-  - 示例: `"http://localhost:7878/player"`
+  - 示例: `"http://localhost:7878/player"`（这个是**YesPlayMusic**默认地址）
 - `AMLL_WS_URI`: 你的 `amll` 服务的 WebSocket 地址。
-  - 示例: `"ws://localhost:11444"`
+  - 示例: `"ws://localhost:11444"`（先把amll里的ws地址绑定改成0.0.0.0:11444，然后再在手机的wifi设置中找到手机的ip地址，然后把这一项改成ws://你的ip地址:11444）
 
 ### 4. 运行
 
