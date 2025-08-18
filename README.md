@@ -57,7 +57,7 @@ pip install websockets aiohttp loguru requests
 - `YESPLAY_PLAYER_API`: 你的 YesPlayMusic 播放器 API 地址。
   - 示例: `"http://localhost:7878/player"`（这个是**YesPlayMusic**默认地址）
 - `AMLL_WS_URI`: 你的 `amll` 服务的 WebSocket 地址。
-  - 示例: `"ws://localhost:11444"`（先把amll里的ws地址绑定改成0.0.0.0:11444，然后再在手机的wifi设置中找到手机的ip地址，然后把这一项改成ws://你的ip地址:11444）
+  - 示例: `"ws://localhost:11444"`（先把amll里的ws地址绑定改成0.0.0.0:11444，然后把这一项改成ws://0.0.0.0:11444）[因为绝大部分容器和手机的网络是连通，当然假如用虚拟机或者特殊配置过，那需要填写手机的IP）]
 
 ### 4. 运行
 
