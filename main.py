@@ -9,7 +9,8 @@ import time
 
 import aiohttp
 import websockets
-from loguru import logger
+
+from logger_config import logger
 
 # --- 模块导入 ---
 # 配置
@@ -18,7 +19,7 @@ import config
 from state import player_state
 import state as s
 # 工具和辅助函数
-from utils import fetch_json, setup_logger
+from utils import fetch_json
 from player_tools import get_player_volume, get_player_status
 # 事件处理器
 from event_handlers import handle_incoming_messages, handle_track_update, send_ws_message
@@ -150,7 +151,6 @@ async def main_loop():
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
-    setup_logger()
     try:
         asyncio.run(main_loop())
     except KeyboardInterrupt:

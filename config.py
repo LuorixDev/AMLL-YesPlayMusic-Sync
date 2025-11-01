@@ -7,6 +7,7 @@
 # API地址
 YESPLAY_PLAYER_API = "http://127.0.0.1:27232/player"
 YESPLAY_LYRIC_API = "http://127.0.0.1:10754/lyric"
+YESPLAY_YRC_LYRIC_API = "http://127.0.0.1:10754/lyric/new"
 TTML_LYRIC_API_TEMPLATES = [
     "https://amll.mirror.dimeta.top/api/db/ncm-lyrics/{song_id}.ttml",
 ]

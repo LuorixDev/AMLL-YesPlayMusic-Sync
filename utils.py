@@ -2,61 +2,10 @@
 
 import json
 import re
-import sys
 from typing import Dict, Any, Optional, List
 
 import aiohttp
-from loguru import logger
-
-def colorize_message(message: str) -> str:
-    """
-    为日志消息中的特定模式添加ANSI颜色代码。
-    """
-    # 为数字添加黄色
-    message = re.sub(r'(\d+)', r'\033[93m\1\033[0m', message)
-    # 为URL添加蓝色
-    message = re.sub(r'(https?://[^\s]+)', r'\033[94m\1\033[0m', message)
-    # 为状态码（如 200 OK）添加特定颜色
-    message = re.sub(r'(\b(200|404|500)\b)', r'\033[92m\1\033[0m', message) # Green for 2xx
-    message = re.sub(r'(\b(4\d{2})\b)', r'\033[91m\1\033[0m', message) # Red for 4xx
-    # 为 "ON_RESUMED", "ON_PAUSED" 等关键字添加品红色
-    message = re.sub(r'(ON_RESUMED|ON_PAUSED|ON_VOLUME_CHANGED|ON_PLAY_PROGRESS)', r'\033[95m\1\033[0m', message)
-    return message
-
-def setup_logger():
-    """
-    配置loguru日志记录器，添加彩色输出。
-    """
-    logger.remove()  # 移除默认的处理器
-    # 注意：这里的 `colorize=True` 仅对预设的 `level`, `time` 等生效
-    # 消息本身的颜色需要我们手动处理
-    logger.add(
-        sys.stderr,
-        level="INFO",
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-               "<level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-        colorize=True,
-    )
-    # 劫持 logger 的 info, warning, error 方法
-    original_info = logger.info
-    original_warning = logger.warning
-    original_error = logger.error
-
-    def new_info(message, *args, **kwargs):
-        original_info(colorize_message(message), *args, **kwargs)
-
-    def new_warning(message, *args, **kwargs):
-        original_warning(colorize_message(message), *args, **kwargs)
-
-    def new_error(message, *args, **kwargs):
-        original_error(colorize_message(message), *args, **kwargs)
-
-    logger.info = new_info
-    logger.warning = new_warning
-    logger.error = new_error
-
-    logger.info("日志记录器已初始化。")
+from logger_config import logger
 
 
 async def fetch_json(session: aiohttp.ClientSession, url: str) -> Optional[Dict[str, Any]]:
@@ -139,3 +88,48 @@ def parse_lrc(lrc_text: str) -> List[Dict[str, Any]]:
             lines[i]["words"][0]["endTime"] = end_time
 
     return lines
+
+
+def parse_yrc(yrc_text: str) -> List[Dict[str, Any]]:
+    """
+    解析YRC（网易云逐字歌词）格式的歌词文本，并将其转换为amll兼容的格式。
+    """
+    parsed_lines = []
+    line_re = re.compile(r'\[(\d+),(\d+)\](.*)')
+    word_re = re.compile(r'\((\d+),(\d+),(\d+)\)(.)')
+
+    for line in yrc_text.splitlines():
+        line_match = line_re.match(line)
+        if not line_match:
+            continue
+
+        start_time_ms = int(line_match.group(1))
+        duration_ms = int(line_match.group(2))
+        end_time_ms = start_time_ms + duration_ms
+        words_part = line_match.group(3)
+
+        words = []
+        for word_match in word_re.finditer(words_part):
+            word_start_time = int(word_match.group(1))
+            word_duration_cs = int(word_match.group(2)) # 厘秒
+            word_text = word_match.group(4)
+            
+            word_end_time = word_start_time + word_duration_cs * 10
+
+            words.append({
+                "startTime": word_start_time,
+                "endTime": word_end_time,
+                "word": word_text
+            })
+
+        if words:
+            parsed_lines.append({
+                "startTime": start_time_ms,
+                "endTime": end_time_ms,
+                "words": words,
+                "translatedLyric": "",
+                "romanLyric": "",
+                "flag": 0,
+            })
+
+    return parsed_lines
