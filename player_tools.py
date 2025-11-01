@@ -132,7 +132,7 @@ async def get_player_status() -> Optional[str]:
                 return None
         else:
             error_message = stderr.decode().strip()
-            if "was not provided by any .service files" in error_message:
+            if "was not provided by any .service files" in error_message or "The name is not activatable" in error_message:
                  logger.debug(f"获取播放状态失败，可能是播放器未运行: {error_message}")
             else:
                 logger.error(f"获取播放状态失败: {error_message}")
