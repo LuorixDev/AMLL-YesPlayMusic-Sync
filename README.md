@@ -2,7 +2,7 @@
 
 这是一个将 [YesPlayMusic](https://github.com/qier222/YesPlayMusic) 播放器状态与 [amll (applemusic-like-lyrics)](https://github.com/Steve-xmh/applemusic-like-lyrics) 服务进行同步的Python工具。
 
->如果需要来自网易云的逐字歌词，可能需要临时本地部署https://github.com/neteasecloudmusicapienhanced/api-enhanced，启动后将config.py中的YESPLAY_YRC_LYRIC_API路径改为临时部署路径（同一台机器不用改，默认3000）
+>如果需要来自网易云的逐字歌词，可能需要临时本地部署https://github.com/neteasecloudmusicapienhanced/api-enhanced ，启动后将config.py中的YESPLAY_YRC_LYRIC_API路径改为临时部署路径（同一台机器不用改，默认3000）
 
 需要将config.py的数据改成你的实际数据，主要需要修改AMLL_WS_URI，其他都是yesplaymusic和api的默认本地地址
 
