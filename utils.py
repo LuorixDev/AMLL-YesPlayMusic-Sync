@@ -111,10 +111,10 @@ def parse_yrc(yrc_text: str) -> List[Dict[str, Any]]:
         words = []
         for word_match in word_re.finditer(words_part):
             word_start_time = int(word_match.group(1))
-            word_duration_cs = int(word_match.group(2)) # 厘秒
+            word_duration_ms = int(word_match.group(2))  # 毫秒
             word_text = word_match.group(4)
-            
-            word_end_time = word_start_time + word_duration_cs * 10
+
+            word_end_time = word_start_time + word_duration_ms
 
             words.append({
                 "startTime": word_start_time,
